@@ -1,0 +1,23 @@
+//SPDX-License-Identifier: MIT
+pragma solidity 0.8.19;
+
+import {Test,Console} from "forge-std/Script.sol";
+import {DeployRaffleScript} from "../../script/DeployRaffleScript.sol";
+import {HelperConfig} from "../../script/HelperConfig.sol";
+import {Raffle} from "../../src/Raffle.sol";
+
+contract RaffleTest is Test{
+    Raffle raffle;
+    HelperConfig helperconfig = new HelperConfig;
+    address player = makeAddr("player");
+    uint256 constant PLAYER_BALANCE = 100 ether;
+    function setUp() external{
+        DeployRaffleScript deployer = new DeployRaffleScript();
+        HelperConfig.NetworkConfig config = helperconfig.getConfig();
+        raffle = deployer.run();
+        vm.deal(player,PLAYER_BALANCE);
+    }
+    function testRaffleIsInitializedOpen() public {
+        assertEq();
+    }
+}
