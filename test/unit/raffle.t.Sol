@@ -1,23 +1,129 @@
-//SPDX-License-Identifier: MIT
+//SPDX-License-Identidier: MIT
 pragma solidity 0.8.19;
 
-import {Test,Console} from "forge-std/Script.sol";
-import {DeployRaffleScript} from "../../script/DeployRaffleScript.sol";
-import {HelperConfig} from "../../script/HelperConfig.sol";
+import {Test} from "forge-std/Test.sol";
 import {Raffle} from "../../src/Raffle.sol";
+import {DeployRaffleScript} from "../../script/DeployRaffleScript.s.sol";
+import {HelperConfig} from "../../script/HelperConfig.s.sol";
 
 contract RaffleTest is Test{
-    Raffle raffle;
-    HelperConfig helperconfig = new HelperConfig;
-    address player = makeAddr("player");
-    uint256 constant PLAYER_BALANCE = 100 ether;
+    Raffle public raffle;
+    HelperConfig public helper;
+    HelperConfig.NetworkConfig public config;
+
+    address public player = makeAddr("player");
+    address public player2 = makeAddr("player2");
+    uint256 public constant BALANCE_PLAYER = 100 ether;
+    uint256 public constant RAFFLE_ENTRY = 1 ether;
+    
     function setUp() external{
         DeployRaffleScript deployer = new DeployRaffleScript();
-        HelperConfig.NetworkConfig config = helperconfig.getConfig();
-        raffle = deployer.run();
-        vm.deal(player,PLAYER_BALANCE);
+        (raffle, helper) = deployer.deployContract();
+        config = helper.getConfig();
+        vm.deal(player,BALANCE_PLAYER);
+        vm.deal(player2,BALANCE_PLAYER);
     }
-    function testRaffleIsInitializedOpen() public {
-        assertEq();
+
+    function testRaffleInitializedToOpen() public view{
+        assert(raffle.getRaffleStatus() == Raffle.RaffleStatus.OPEN);
+    }
+
+    function testRevertNotEnoughTickets() public {
+        vm.prank(player);
+        vm.expectRevert(Raffle.SendMoreToEnterRaffle.selector);
+        raffle.enterRaffle();
+    }
+    function testPlayerRecordedWhenEnterRaffle() public{
+        vm.prank(player);
+        raffle.enterRaffle{value:RAFFLE_ENTRY}();
+        assert(raffle.getPlayer(0).playerAddress == player);
+    }
+
+    function testRaffleEnterWithExactPayment() public {
+        // 1 ETH = $2000 (from price feed)
+        // $50 = 0.025 ETH
+        uint256 entranceFee = 0.01 ether;
+        
+        vm.startPrank(player);
+        raffle.enterRaffle{value: entranceFee}();
+        vm.stopPrank();
+        
+        // Check that player was added correctly
+        Raffle.Player memory _player = raffle.getPlayer(0);
+        assertEq(_player.playerAddress, player);
+        assertEq(_player.nbTicketOwned, 1);
+    }
+
+    function testRaffleEnterWithMultipleEntries() public {
+        // 1 ETH = $2000 (from price feed)
+        // $50 = 0.025 ETH
+        uint256 entranceFee = 0.03 ether;
+        
+        vm.startPrank(player);
+        raffle.enterRaffle{value: entranceFee}();
+        vm.stopPrank();
+        
+        // Check that player was added correctly
+        Raffle.Player memory _player = raffle.getPlayer(0);
+        assertEq(_player.playerAddress, player);
+        assertEq(_player.nbTicketOwned, 3);
+    }
+
+    function testRaffleRefundsExcessPayment() public {
+        uint256 entranceFee = 0.025 ether;
+        uint256 expectedRefund = 0.005 ether;
+        
+        uint256 initialBalance = player.balance;
+        
+        vm.startPrank(player);
+        raffle.enterRaffle{value: entranceFee}();
+        vm.stopPrank();
+        
+        // Check that player got refunded correctly
+        assertEq(player.balance, initialBalance - entranceFee + expectedRefund);
+        
+        // Check that player was added correctly with 2 tickets
+        Raffle.Player memory _player = raffle.getPlayer(0);
+        assertEq(_player.playerAddress, player);
+        assertEq(_player.nbTicketOwned, 2);
+    }
+
+    function testCantEnterRaffleWhenPaused() public {
+        // First pause the raffle
+        vm.startPrank(msg.sender);
+        raffle.pauseRaffle();
+        vm.stopPrank();
+        
+        // Then try to enter
+        uint256 entranceFee = 0.01 ether;
+        
+        vm.startPrank(player);
+        vm.expectRevert(Raffle.RaffleClosed.selector);
+        raffle.enterRaffle{value: entranceFee}();
+        vm.stopPrank();
+    }
+
+    function testCantEnterRaffleWhenEnded() public {
+        // First end the raffle by making it ready for upkeep and then performing upkeep
+        vm.warp(block.timestamp + raffle.getInterval() + 1);
+        
+        // Enter raffle first to have balance
+        uint256 entranceFee = 0.01 ether;
+        vm.startPrank(player);
+        raffle.enterRaffle{value: entranceFee}();
+        vm.stopPrank();
+        
+        // Perform upkeep to end the raffle
+        raffle.performUpkeep("");
+        
+        // Now try to enter the raffle again
+        vm.startPrank(player2);
+        vm.expectRevert(Raffle.RaffleClosed.selector);
+        raffle.enterRaffle{value: entranceFee}();
+        vm.stopPrank();
     }
 }
+
+
+
+

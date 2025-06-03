@@ -28,7 +28,7 @@ contract Raffle is VRFConsumerBaseV2Plus,AutomationCompatibleInterface{
     //Player pay ticket to participate the raffle(need a struct player/). He can pay the amount of ticket he want to enter the raffle. He is reimbursed the remainder
     //After the specified time is passed, contract pick winner, he receive 95% while host take 5%
     using PriceConverter for uint256;
-    
+
     error Raffle__OneTicketAtLeastToEnterRaffle();
     error Raffle__ClosedAtTheMoment(RaffleStatuts s_rf);
     error Raffle__OwnerNeeded();
@@ -165,4 +165,88 @@ f   unction checkUpkeep(
         enterRaffle();
     }
 
+}
+import {Script,Console} from"forge-std/Script.sol"; 
+contract HelperConfig is Script{
+    error HWGAP();;
+
+    struct NetworkConfig{address priceFeed;}
+    NEtworkConfig localnetworkconfig;
+    mapping(uint256 chainid => NetworkConfig) networksConfigs;
+
+    constructor(){
+        networksConfigs[SEPOLIA] = getSepoliaConfig();
+    }
+    function getConfig() public view returns(NetworkConfig memory config){
+        return getConfigByChainId(block.chainid);
+    }
+    function setConfig(uint256 chainid, NetworkConfig memory config) public{
+        networksConfigs[chainid] = config;
+    }
+    function getConfigBychaiID(uint256 chainid)ublic view returns(NetworkConfig memory config){
+        if(networksConfigs[chainid].priceFeed != address(0)){
+            return networksConfigs[chainid]
+        } else if(chainid == LOCAL_ANVIL_ID){
+            return getOrCreateAnvil();
+        }else{
+            revert HWGAP();
+        }
+    }
+    function getSEPOLIAConfig()public returns(NetworkConfig memory config){
+        config = NetworkConfig(0x234355353);
+    }
+    function getOrCreateAnvil()public returns(NetworkConfig memory config){
+        if(localnetworkconfig.priceFeed != address(0)){
+            return localnetworkconfig;
+        }
+
+        vm.startBroadcast();
+        MockV3Aggregator mock = new MockV3Aggregator();
+        vm.stopBroadcast()
+        config = NEtworkConfig(address(mock));
+    }
+}
+
+contract DeployRaffle is Script{
+    function run() external{
+        return deployContract();
+    }
+    function deployContract()external returns (Raffle,HelperConfig){
+        HelperConfig helperconfig = new HelperConfig();
+        HelperConfig.NetworkConfig config = helperconfig.getConfig();
+        vm.startBroadcast();
+        Raffle raffle= new Raffle(config.priceFeed,....);
+        vm.stopbroadcast();
+    }
+}
+
+//SPDX-Licence-IDentifier:MIT
+
+pragma solidity 0.8.19;
+
+import {Test} from "forge-std/Test.sol";
+import {DeployRaffle} from "../script/DeployRaffle.sol";
+import {Raffle} from "../src/Raffle.sol";
+
+contract RaffleTest is Test{
+    Raffle raffle;
+    HelperConfig helper;
+    HelperConfig.NetworkConfig config;
+
+    address public player = makeAddr("player");
+    uint256 public constant STARTING_BALANCE = 100 ether;
+    uint256 public constant NBR_OF_TICKETS = 10;
+    uint256 public constant NBR_OF_ROUNDS = 10;
+    uint256 public constant TICKET_PRICE = 1 ether;
+
+    function setUp() external{
+        DeployRaffle deployer = new DeployRaffle();
+        (raffle,helper) = deployer.deployContract();
+        config = helper.getConfig();
+        vm.deal(player,STARTING_BALANCE);
+    }
+
+    function test_RaffleInitializesInOpenState(){
+        
+    }
 }
