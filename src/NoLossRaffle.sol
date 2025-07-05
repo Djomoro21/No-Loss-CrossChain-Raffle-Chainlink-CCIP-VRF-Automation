@@ -8,6 +8,7 @@ import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFCo
 import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
 import {ConfirmedOwnerWithProposal} from "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwnerWithProposal.sol";
+import {IReceiverCCIP} from "./interfaces/IReceiverCCIP.sol";
 
 /*@author:Djomoro
 *Host Create a raffle. Raffle has a duration for players to enter, an entry price a max number of rounds.
@@ -80,7 +81,8 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
     bool private s_withdrawn;
     uint256 private s_interval_accrual;
 
-    address private s_allowedSender;
+    mapping(address sender => bool allowed) private s_allowedSender;
+    address[] private s_allowedSenderList;
 
     event RaffleEntriesUpdated(address player, uint256 nbTickets);
     event RaffleNewPlayerEntered(address player, uint256 nbTickets);
@@ -95,7 +97,7 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
         _;
     }
     modifier onlyAllowListed(){
-        if(msg.sender != s_allowedSender){
+        if(!s_allowedSender[msg.sender]){
             revert Raffle__NotAllowedToCall();
         }
         _;
@@ -162,15 +164,11 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
             emit RaffleEntriesUpdated(msg.sender, _nbTickets);
         }
     }
-    function enterRaffleCrossChain(address _player,  uint256 _nbTickets) external onlyAllowListed{
+    function enterRaffleCrossChain(address _player,  uint256 _nbTickets, uint256 _totalCost) external onlyAllowListed{
         if(s_raffleStatut != RaffleStatut.OPEN){
             revert Raffle__IsNotOpen(s_raffleStatut);
         }
-        if(_nbTickets<1){
-            revert Raffle__InsufficientAmountOfTicket(_nbTickets,"Minimum 1 ticket");
-        }
-        uint256 ticketsCost = _nbTickets * s_ticketPrice;
-        s_paymentToken.safeTransferFrom(_player,address(this),ticketsCost);
+        s_paymentToken.safeTransferFrom(msg.sender,address(this),_totalCost);
 
         if(s_playerToID[_player] == 0) { /*New Player*/
             s_playerID ++;
@@ -298,6 +296,15 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
         
         s_raffleStatut = RaffleStatut.OPEN;
     }
+
+    function updateRaffleStatusToSatelliteChain() public onlyOwner{
+        bool s_raffleActive = (s_raffleStatut == RaffleStatut.OPEN);
+    
+        for(uint256 i = 0; i < s_allowedSenderList.length; i++) {
+            // Cast the address to IReceiverCCIP interface and call the function
+            IReceiverCCIP(s_allowedSenderList[i]).updateSatelliteChainWithRaffleStatus(s_raffleActive);
+        }
+    }
     //Getters
     function getCurrentRound() public view returns (uint256){return s_currentRound;}
     function getMaxRounds() public view returns(uint256)  {return s_maxRounds;}
@@ -313,7 +320,8 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
     function getPaymentTokenBalance() public  view returns(IERC20,uint256){return (s_paymentToken, s_paymentToken.balanceOf(address(this)));}
     //Setters
     function setAllowedSender(address _sender) public onlyOwner{
-        s_allowedSender = _sender;
+        s_allowedSender[_sender] = true;
+        s_allowedSenderList.push(_sender);
     }
    function updateTicketPrice(uint256 _ticketPrice) public onlyOwner {
         if(s_raffleStatut == RaffleStatut.OPEN){
@@ -379,7 +387,7 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
         Ownable.transferOwnership(newOwner);
     }
 
-    function _transferOwnership(address newOwner) internal virtual override(Ownable, ConfirmedOwnerWithProposal) {
+    function _transferOwnership(address newOwner) internal override(Ownable, ConfirmedOwnerWithProposal) {
         Ownable._transferOwnership(newOwner);
     }
 
